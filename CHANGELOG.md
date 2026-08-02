@@ -1,5 +1,30 @@
 # Changelog
 
+## v0.3.0-beta.2
+
+**Beta pre-release.**
+
+### Added
+
+Nine new sensors, sourced from two previously unused OBI API endpoints and
+three fields already present in the `/bridges` response but not yet exposed:
+
+- `sensor.obi_forecast_weekly` / `sensor.obi_forecast_monthly` — consumption
+  forecast in Wh from `GET /analytics/{hh_id}/{mid_id}/forecast`.
+- `sensor.obi_standby_daily` / `_weekly` / `_monthly` / `_yearly` — standby
+  (baseline) consumption in Wh for the last completed period, from
+  `GET /analytics/{hh_id}/{mid_id}/{interval}/standby`. Only report a value
+  once a full period has elapsed; a freshly set up bridge will show `weekly`,
+  `monthly`, and `yearly` as unavailable until enough time has passed.
+- `sensor.obi_ota_status` / `sensor.obi_ota_progress` /
+  `sensor.obi_upload_interval` — the bridge sensor's `otaStatus`,
+  `otaProgress`, and `uploadInterval` fields, already fetched as part of
+  every `/bridges` poll but previously discarded.
+
+The standby query always requests a fixed 35-day window regardless of the
+configured `historical_duration`, to reliably cover the last completed month
+independent of that (often much shorter) setting.
+
 ## v0.3.0-beta.1
 
 **Beta pre-release** — published so it can be installed via HACS by enabling
