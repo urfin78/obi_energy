@@ -377,10 +377,10 @@ class ObiApiClient:
             raise ObiConnectionError("Unexpected response format for consumption forecast")
         return data
 
-    async def async_get_standby_consumption(
+    async def async_get_standby_power(
         self, hh_id: str, mid_id: str, interval: str, duration: str
     ) -> list[dict[str, Any]]:
-        """Return standby consumption records for a completed-period interval."""
+        """Return average standby power records (watts) for a completed-period interval."""
         url = ANALYTICS_STANDBY_URL_TEMPLATE.format(
             hh_id=hh_id, mid_id=mid_id, interval=interval
         )
@@ -400,7 +400,7 @@ class ObiApiClient:
                 "Unexpected response type for standby (%s): %s", interval, type(data).__name__
             )
             raise ObiConnectionError(
-                f"Unexpected response format for standby consumption ({interval})"
+                f"Unexpected response format for standby power ({interval})"
             )
         return data
 

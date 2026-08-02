@@ -204,8 +204,8 @@ class ObiEnergyCoordinator(DataUpdateCoordinator[ObiEnergyData]):
             negative_energy.get("value") if negative_energy else None,
         )
 
-        # Forecast and standby consumption are optional supplementary data --
-        # a failure here must not block the poll cycle for the more important
+        # Forecast and standby power are optional supplementary data -- a
+        # failure here must not block the poll cycle for the more important
         # energy/sensor_info values above.
         try:
             forecast = await self.client.async_get_consumption_forecast(
@@ -218,12 +218,12 @@ class ObiEnergyCoordinator(DataUpdateCoordinator[ObiEnergyData]):
         standby_data: dict[str, list[dict[str, Any]]] = {}
         for interval in STANDBY_INTERVALS:
             try:
-                standby_data[interval] = await self.client.async_get_standby_consumption(
+                standby_data[interval] = await self.client.async_get_standby_power(
                     self.hh_id, self.mid_id, interval, STANDBY_DURATION
                 )
             except ObiApiError as err:
                 _LOGGER.debug(
-                    "Could not fetch %s standby consumption: %s", interval, err
+                    "Could not fetch %s standby power: %s", interval, err
                 )
                 standby_data[interval] = []
 

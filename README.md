@@ -21,7 +21,7 @@ Every scan interval, the integration fetches:
   for the `energy` and `negative_energy` measures.
 - Consumption forecast via `GET /analytics/{hh_id}/{mid_id}/forecast`
   (weekly/monthly projections).
-- Standby (baseline) consumption via
+- Average standby (baseline) power via
   `GET /analytics/{hh_id}/{mid_id}/{interval}/standby`, for the last
   completed `daily`/`weekly`/`monthly`/`yearly` period.
 - Live readings via a WebSocket connection to OBI's live-mode endpoint. Incoming
@@ -65,10 +65,10 @@ Assistant energy tooling — and the Energy Dashboard — expects kWh.
 | `sensor.obi_last_record_received` | – | timestamp | – |
 | `sensor.obi_forecast_weekly` | Wh | energy | – |
 | `sensor.obi_forecast_monthly` | Wh | energy | – |
-| `sensor.obi_standby_daily` | Wh | energy | – |
-| `sensor.obi_standby_weekly` | Wh | energy | – |
-| `sensor.obi_standby_monthly` | Wh | energy | – |
-| `sensor.obi_standby_yearly` | Wh | energy | – |
+| `sensor.obi_standby_daily` | W | power | – |
+| `sensor.obi_standby_weekly` | W | power | – |
+| `sensor.obi_standby_monthly` | W | power | – |
+| `sensor.obi_standby_yearly` | W | power | – |
 | `sensor.obi_ota_status` | – | – | – (text, e.g. `NOT_UPDATING`) |
 | `sensor.obi_ota_progress` | % | – | measurement |
 | `sensor.obi_upload_interval` | s | – | – |
@@ -80,7 +80,10 @@ used by OBI. The connection-strength sensor also carries diagnostic attributes:
 full diagnostics dump is also available via **Settings → Devices & Services →
 OBI Energy → Download diagnostics**.
 
-The standby sensors report a value only once a full period has elapsed —
+The standby sensors report the **average standby power in watts** for the
+last completed period — not an energy/consumption value in Wh, despite the
+"standby" analytics being consumption-adjacent in the OBI app's UI. They
+report a value only once a full period has elapsed —
 `sensor.obi_standby_weekly`/`_monthly`/`_yearly` will show as **unavailable**
 on a freshly set-up bridge until enough time has passed to complete at least
 one such period. The standby query always looks back a fixed 35 days,
