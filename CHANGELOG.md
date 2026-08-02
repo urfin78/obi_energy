@@ -1,6 +1,6 @@
 # Changelog
 
-## v0.3.0-beta.2
+## v0.4.0-beta.1
 
 **Beta pre-release.**
 
