@@ -56,11 +56,11 @@ MEASURE_NEGATIVE_ENERGY = "negative_energy"
 
 WH_PER_KWH = 1000
 
-# Standby-consumption intervals confirmed to exist against the live API.
+# Standby-power intervals confirmed to exist against the live API.
 # quarterhour/minutely/raw/live were probed and do NOT exist (HTTP 400).
 STANDBY_INTERVALS = ("daily", "weekly", "monthly", "yearly")
 
-# Fixed lookback window for standby-consumption requests, independent of the
+# Fixed lookback window for standby-power requests, independent of the
 # user-configurable historical_duration (which can be as short as PT15M).
 # 35 days reliably covers the last completed month regardless of that setting.
 STANDBY_DURATION = "P35D"

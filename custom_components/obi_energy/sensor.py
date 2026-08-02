@@ -545,7 +545,7 @@ class ObiForecastMonthlySensor(ObiEnergyBaseEntity):
 
 
 class _ObiStandbySensorBase(ObiEnergyBaseEntity):
-    """Common base for standby-consumption sensors (one per interval)."""
+    """Common base for standby-power sensors (one per interval)."""
 
     _standby_field: str
 
@@ -557,7 +557,7 @@ class _ObiStandbySensorBase(ObiEnergyBaseEntity):
 
     @property
     def native_value(self) -> int | None:
-        """Return the most recent standby-consumption value in Wh."""
+        """Return the most recent average standby power value in W."""
         records = getattr(self.coordinator.data, self._standby_field)
         if not records:
             return None
@@ -566,7 +566,11 @@ class _ObiStandbySensorBase(ObiEnergyBaseEntity):
 
 
 class ObiStandbyDailySensor(_ObiStandbySensorBase):
-    """Standby consumption for the last completed day."""
+    """Average standby power for the last completed day.
+
+    The API returns this measure in watts (a power value, e.g. 147), not
+    watt-hours, despite the "standby consumption" naming used elsewhere.
+    """
 
     _standby_field = "standby_daily"
 
@@ -578,14 +582,14 @@ class ObiStandbyDailySensor(_ObiStandbySensorBase):
             SensorEntityDescription(
                 key="standby_daily",
                 translation_key="standby_daily",
-                native_unit_of_measurement=UnitOfEnergy.WATT_HOUR,
-                device_class=SensorDeviceClass.ENERGY,
+                native_unit_of_measurement=UnitOfPower.WATT,
+                device_class=SensorDeviceClass.POWER,
             ),
         )
 
 
 class ObiStandbyWeeklySensor(_ObiStandbySensorBase):
-    """Standby consumption for the last completed week."""
+    """Average standby power for the last completed week."""
 
     _standby_field = "standby_weekly"
 
@@ -597,14 +601,14 @@ class ObiStandbyWeeklySensor(_ObiStandbySensorBase):
             SensorEntityDescription(
                 key="standby_weekly",
                 translation_key="standby_weekly",
-                native_unit_of_measurement=UnitOfEnergy.WATT_HOUR,
-                device_class=SensorDeviceClass.ENERGY,
+                native_unit_of_measurement=UnitOfPower.WATT,
+                device_class=SensorDeviceClass.POWER,
             ),
         )
 
 
 class ObiStandbyMonthlySensor(_ObiStandbySensorBase):
-    """Standby consumption for the last completed month."""
+    """Average standby power for the last completed month."""
 
     _standby_field = "standby_monthly"
 
@@ -616,14 +620,14 @@ class ObiStandbyMonthlySensor(_ObiStandbySensorBase):
             SensorEntityDescription(
                 key="standby_monthly",
                 translation_key="standby_monthly",
-                native_unit_of_measurement=UnitOfEnergy.WATT_HOUR,
-                device_class=SensorDeviceClass.ENERGY,
+                native_unit_of_measurement=UnitOfPower.WATT,
+                device_class=SensorDeviceClass.POWER,
             ),
         )
 
 
 class ObiStandbyYearlySensor(_ObiStandbySensorBase):
-    """Standby consumption for the last completed year."""
+    """Average standby power for the last completed year."""
 
     _standby_field = "standby_yearly"
 
@@ -635,8 +639,8 @@ class ObiStandbyYearlySensor(_ObiStandbySensorBase):
             SensorEntityDescription(
                 key="standby_yearly",
                 translation_key="standby_yearly",
-                native_unit_of_measurement=UnitOfEnergy.WATT_HOUR,
-                device_class=SensorDeviceClass.ENERGY,
+                native_unit_of_measurement=UnitOfPower.WATT,
+                device_class=SensorDeviceClass.POWER,
             ),
         )
 

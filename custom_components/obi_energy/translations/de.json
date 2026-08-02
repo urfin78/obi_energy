@@ -113,16 +113,16 @@
         "name": "Monatliche Verbrauchsprognose"
       },
       "standby_daily": {
-        "name": "Standby-Verbrauch (täglich)"
+        "name": "Standby-Leistung (täglich)"
       },
       "standby_weekly": {
-        "name": "Standby-Verbrauch (wöchentlich)"
+        "name": "Standby-Leistung (wöchentlich)"
       },
       "standby_monthly": {
-        "name": "Standby-Verbrauch (monatlich)"
+        "name": "Standby-Leistung (monatlich)"
       },
       "standby_yearly": {
-        "name": "Standby-Verbrauch (jährlich)"
+        "name": "Standby-Leistung (jährlich)"
       },
       "ota_status": {
         "name": "OTA-Status"

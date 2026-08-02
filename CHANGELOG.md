@@ -1,5 +1,21 @@
 # Changelog
 
+## v0.4.0-beta.2
+
+**Beta pre-release.**
+
+### Fixed
+
+- `sensor.obi_standby_daily`/`_weekly`/`_monthly`/`_yearly` were declared as
+  energy sensors (Wh), but the `/analytics/.../standby` endpoint actually
+  returns an average **power** value in watts (confirmed against the OBI
+  app: its "standby power" reading matches the raw API value directly,
+  while its separately shown "standby consumption" in kWh is that same
+  power figure multiplied by the period length — not a second API field).
+  Sensors now use `device_class: power` / unit `W`. The API client method
+  was renamed from `async_get_standby_consumption` to
+  `async_get_standby_power` to match.
+
 ## v0.4.0-beta.1
 
 **Beta pre-release.**
