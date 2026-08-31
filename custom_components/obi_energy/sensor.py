@@ -497,6 +497,7 @@ class ObiForecastWeeklySensor(ObiEnergyBaseEntity):
                 translation_key="forecast_weekly",
                 native_unit_of_measurement=UnitOfEnergy.WATT_HOUR,
                 device_class=SensorDeviceClass.ENERGY,
+                state_class=SensorStateClass.MEASUREMENT,
             ),
         )
 
@@ -527,6 +528,7 @@ class ObiForecastMonthlySensor(ObiEnergyBaseEntity):
                 translation_key="forecast_monthly",
                 native_unit_of_measurement=UnitOfEnergy.WATT_HOUR,
                 device_class=SensorDeviceClass.ENERGY,
+                state_class=SensorStateClass.MEASUREMENT,
             ),
         )
 
@@ -584,6 +586,7 @@ class ObiStandbyDailySensor(_ObiStandbySensorBase):
                 translation_key="standby_daily",
                 native_unit_of_measurement=UnitOfPower.WATT,
                 device_class=SensorDeviceClass.POWER,
+                state_class=SensorStateClass.MEASUREMENT,
             ),
         )
 
@@ -603,6 +606,7 @@ class ObiStandbyWeeklySensor(_ObiStandbySensorBase):
                 translation_key="standby_weekly",
                 native_unit_of_measurement=UnitOfPower.WATT,
                 device_class=SensorDeviceClass.POWER,
+                state_class=SensorStateClass.MEASUREMENT,
             ),
         )
 
@@ -622,6 +626,7 @@ class ObiStandbyMonthlySensor(_ObiStandbySensorBase):
                 translation_key="standby_monthly",
                 native_unit_of_measurement=UnitOfPower.WATT,
                 device_class=SensorDeviceClass.POWER,
+                state_class=SensorStateClass.MEASUREMENT,
             ),
         )
 
@@ -641,6 +646,7 @@ class ObiStandbyYearlySensor(_ObiStandbySensorBase):
                 translation_key="standby_yearly",
                 native_unit_of_measurement=UnitOfPower.WATT,
                 device_class=SensorDeviceClass.POWER,
+                state_class=SensorStateClass.MEASUREMENT,
             ),
         )
 
