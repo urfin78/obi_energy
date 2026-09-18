@@ -497,7 +497,12 @@ class ObiForecastWeeklySensor(ObiEnergyBaseEntity):
                 translation_key="forecast_weekly",
                 native_unit_of_measurement=UnitOfEnergy.WATT_HOUR,
                 device_class=SensorDeviceClass.ENERGY,
-                state_class=SensorStateClass.MEASUREMENT,
+                # TOTAL, not MEASUREMENT: Home Assistant rejects MEASUREMENT
+                # for device_class ENERGY. TOTAL_INCREASING would be wrong
+                # too - a forecast is revised downwards as well, and HA reads
+                # a drop under TOTAL_INCREASING as a meter reset. TOTAL keeps
+                # long-term statistics working and tolerates falling values.
+                state_class=SensorStateClass.TOTAL,
             ),
         )
 
@@ -528,7 +533,12 @@ class ObiForecastMonthlySensor(ObiEnergyBaseEntity):
                 translation_key="forecast_monthly",
                 native_unit_of_measurement=UnitOfEnergy.WATT_HOUR,
                 device_class=SensorDeviceClass.ENERGY,
-                state_class=SensorStateClass.MEASUREMENT,
+                # TOTAL, not MEASUREMENT: Home Assistant rejects MEASUREMENT
+                # for device_class ENERGY. TOTAL_INCREASING would be wrong
+                # too - a forecast is revised downwards as well, and HA reads
+                # a drop under TOTAL_INCREASING as a meter reset. TOTAL keeps
+                # long-term statistics working and tolerates falling values.
+                state_class=SensorStateClass.TOTAL,
             ),
         )
 
