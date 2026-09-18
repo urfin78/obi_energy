@@ -1,5 +1,49 @@
 # Changelog
 
+## v0.4.0-beta.5
+
+**Beta pre-release.**
+
+### Fixed
+
+- `sensor.obi_forecast_weekly` and `sensor.obi_forecast_monthly` used
+  `state_class: measurement` together with `device_class: energy`, a
+  combination Home Assistant rejects. Both sensors logged a warning on every
+  startup and poll, and were excluded from long-term statistics — the opposite
+  of what v0.4.0-beta.3 intended when it added the `state_class`. They now use
+  `state_class: total`, which tolerates a forecast being revised downwards
+  (`total_increasing` would read a drop as a meter reset) while keeping
+  long-term statistics working.
+
+  Existing statistics for these two entities may need clearing under
+  **Developer tools → Statistics** if Home Assistant recorded anything odd
+  before this fix.
+
+  The four standby sensors were unaffected: they are `device_class: power`,
+  for which `measurement` is correct.
+
+### Confirmed
+
+The JWT expiry handling added in v0.4.0-beta.4 now has a measured value behind
+it. With debug logging enabled, the login line reports:
+
+```
+OBI login succeeded (token valid until 2027-03-17T13:40:45+00:00)
+```
+
+**OBI issues tokens valid for 180 days.** The previous fixed 55-minute refresh
+therefore re-authenticated with the account password roughly 4,700 times over a
+period the backend expected a single login to cover. Actual logins are now one
+per token lifetime instead of ~26 per day.
+
+This makes the hypothesis behind
+[Karo-X/obi_energy#25](https://github.com/Karo-X/obi_energy/issues/25)
+considerably more plausible: a backend handing out six-month tokens does not
+expect a client to re-submit the password every hour, and treating that as
+credential stuffing would explain the forced password resets several users have
+reported. It is not proof — whether the resets stop is the actual test — but
+the login rate is no longer a candidate explanation.
+
 ## v0.4.0-beta.4
 
 **Beta pre-release.**
