@@ -6,6 +6,8 @@ never logged, never persisted, and never exposed to entities or attributes.
 from __future__ import annotations
 
 import asyncio
+import base64
+import binascii
 import json
 import logging
 import re
@@ -42,6 +44,8 @@ _LOGGER = logging.getLogger(__name__)
 
 _REQUEST_TIMEOUT = 30
 _MAX_LOG_BODY_CHARS = 300
+# Renew a JWT this long before its own "exp" claim runs out.
+_TOKEN_EXPIRY_MARGIN = timedelta(minutes=5)
 
 
 class ObiApiError(Exception):
@@ -78,6 +82,33 @@ def _parse_iso8601_duration(duration: str) -> timedelta:
         minutes=parts["minutes"],
         seconds=parts["seconds"],
     )
+
+
+def _jwt_expiry(token: str) -> datetime | None:
+    """Return the JWT's own expiry, or None if it cannot be read.
+
+    Only the payload is decoded (no signature check) - this is our own
+    token and we merely want to know how long OBI considers it valid,
+    instead of guessing with a fixed refresh interval.
+    """
+    parts = token.split(".")
+    if len(parts) != 3:
+        return None
+    payload_segment = parts[1]
+    payload_segment += "=" * (-len(payload_segment) % 4)
+    try:
+        payload = json.loads(base64.urlsafe_b64decode(payload_segment))
+    except (ValueError, binascii.Error):
+        return None
+    if not isinstance(payload, dict):
+        return None
+    exp = payload.get("exp")
+    if not isinstance(exp, (int, float)):
+        return None
+    try:
+        return datetime.fromtimestamp(exp, tz=timezone.utc)
+    except (OverflowError, OSError, ValueError):
+        return None
 
 
 def _truncate(text: str | None) -> str:
@@ -131,6 +162,10 @@ class ObiApiClient:
         self._login_refresh_interval = timedelta(seconds=login_refresh_interval)
         self._token: str | None = None
         self._token_obtained_at: datetime | None = None
+        self._token_expires_at: datetime | None = None
+        # Serializes logins so one poll cycle (7 requests) can never trigger
+        # more than a single login.
+        self._login_lock = asyncio.Lock()
 
     def update_credentials(self, email: str, password: str) -> None:
         """Update the credentials used for future logins."""
@@ -138,6 +173,7 @@ class ObiApiClient:
         self._password = password
         self._token = None
         self._token_obtained_at = None
+        self._token_expires_at = None
 
     def update_login_refresh_interval(self, login_refresh_interval: int) -> None:
         """Update how often the token is proactively refreshed."""
@@ -151,7 +187,16 @@ class ObiApiClient:
     def _token_is_stale(self) -> bool:
         if self._token is None or self._token_obtained_at is None:
             return True
-        return datetime.now(timezone.utc) - self._token_obtained_at >= self._login_refresh_interval
+
+        now = datetime.now(timezone.utc)
+        # The token states its own lifetime; trust that over the configured
+        # interval so a long-lived JWT is not replaced (and re-logged-in) every
+        # 55 minutes for no reason. Every password login is a chance for OBI to
+        # reject or invalidate the credentials.
+        if self._token_expires_at is not None:
+            return now >= self._token_expires_at - _TOKEN_EXPIRY_MARGIN
+
+        return now - self._token_obtained_at >= self._login_refresh_interval
 
     async def async_login(self) -> None:
         """Log in to OBI and store the resulting JWT in memory only."""
@@ -244,7 +289,13 @@ class ObiApiClient:
 
         self._token = token
         self._token_obtained_at = datetime.now(timezone.utc)
-        _LOGGER.debug("OBI login succeeded")
+        self._token_expires_at = _jwt_expiry(token)
+        _LOGGER.debug(
+            "OBI login succeeded (token valid until %s)",
+            self._token_expires_at.isoformat()
+            if self._token_expires_at
+            else "unknown",
+        )
 
     def _api_headers(self, accept: str) -> dict[str, str]:
         return {
@@ -263,7 +314,26 @@ class ObiApiClient:
         }
 
     async def _ensure_logged_in(self) -> None:
-        if self._token_is_stale():
+        """Log in if the current token is stale, at most once concurrently."""
+        if not self._token_is_stale():
+            return
+
+        # Re-check inside the lock: a poll cycle fires several requests, and
+        # without this every one of them would queue up its own login.
+        async with self._login_lock:
+            if self._token_is_stale():
+                await self.async_login()
+
+    async def _async_relogin(self) -> None:
+        """Force a fresh login after a 401, at most once concurrently.
+
+        If a concurrent caller already replaced the token while we waited for
+        the lock, reuse that one instead of logging in a second time.
+        """
+        stale_token = self._token
+        async with self._login_lock:
+            if self._token is not None and self._token != stale_token:
+                return
             await self.async_login()
 
     async def _authenticated_get(
@@ -283,7 +353,7 @@ class ObiApiClient:
                                 "OBI API returned 401 for %s, refreshing token and retrying",
                                 url,
                             )
-                            await self.async_login()
+                            await self._async_relogin()
                             continue
                         await _log_http_error(resp, f"OBI request to {url}")
                         raise ObiAuthError("Not authorized after refreshing token")
@@ -439,7 +509,7 @@ class ObiApiClient:
                         _LOGGER.debug(
                             "OBI sensor update returned 401, refreshing token and retrying"
                         )
-                        await self.async_login()
+                        await self._async_relogin()
                         headers["Authorization"] = f"Bearer {self._token}"
                         continue
                     if resp.status in (401, 403):
@@ -528,7 +598,7 @@ class ObiApiClient:
                     _LOGGER.debug(
                         "OBI live WebSocket returned 401, refreshing token and retrying"
                     )
-                    await self.async_login()
+                    await self._async_relogin()
                     headers["Authorization"] = f"Bearer {self._token}"
                     continue
                 if err.status in (401, 403):
