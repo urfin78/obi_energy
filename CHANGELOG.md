@@ -1,5 +1,58 @@
 # Changelog
 
+## v0.4.0-beta.4
+
+**Beta pre-release.**
+
+### Changed
+
+- The API client now derives its token lifetime from the **JWT's own `exp`
+  claim** and renews five minutes before it expires, instead of logging in
+  again on a fixed 55-minute schedule. Only the token payload is decoded (no
+  signature check) — it is our own token, and the only question is how long
+  OBI considers it valid. The configured `login_refresh_interval` remains the
+  fallback for a token without a readable `exp`, so behaviour is unchanged if
+  OBI's token format differs from what was observed.
+
+- **Logins are serialized** behind a lock, re-checking token staleness inside
+  it. A poll cycle issues seven requests (`/bridges`, `/meter`, `/forecast`,
+  and four `/standby` intervals); previously each of them could trigger its
+  own login. Now at most one login happens per cycle, and the three
+  refresh-after-401 paths share it, reusing a token a concurrent caller
+  already fetched.
+
+### Why
+
+Since mid-September several users have reported being forced to set a **new**
+heyOBI password every one to two days, not merely to re-enter the existing one
+([Karo-X/obi_energy#25](https://github.com/Karo-X/obi_energy/issues/25)).
+
+The cause is not established. The stored password genuinely stops being
+accepted — a plain browser with the same password is rejected too, so the
+symptom is not specific to this integration. But the integration
+re-authenticates with the account password far more often than an app or a
+browser ever would, which makes it a plausible trigger.
+
+This release reduces that rate from roughly 26 logins per day to about two,
+assuming OBI's token carries a long-lived `exp`. That both removes a possible
+cause and makes the question testable: if the forced resets stop, repeated
+password logins were involved; if they continue, the cause is server-side.
+
+### Unverified
+
+The effect **depends on OBI's token actually carrying a usable `exp` claim**,
+which has not yet been confirmed against the live API. With debug logging
+enabled, the login line now reports it:
+
+```
+OBI login succeeded (token valid until 2026-09-19T18:23:11+00:00)
+```
+
+If that reads `token valid until unknown`, the `exp` claim could not be read
+and the previous fixed-interval behaviour applies unchanged — this release then
+has no effect on login frequency. Reports of what that line shows are welcome
+in the issue above.
+
 ## v0.4.0-beta.2
 
 **Beta pre-release.**
