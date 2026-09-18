@@ -15,7 +15,13 @@ from homeassistant.core import HomeAssistant
 from homeassistant.exceptions import ConfigEntryAuthFailed
 from homeassistant.helpers.update_coordinator import DataUpdateCoordinator, UpdateFailed
 
-from .api import ObiApiClient, ObiApiError, ObiAuthError, ObiNotFoundError
+from .api import (
+    ObiApiClient,
+    ObiApiError,
+    ObiAuthError,
+    ObiNotFoundError,
+    ObiRateLimitError,
+)
 from .const import (
     DOMAIN,
     LIVE_UPLOAD_INTERVAL_DISABLED,
@@ -69,6 +75,15 @@ def _latest_measurement(
     if not matching:
         return None
     return max(matching, key=_measurement_time)
+
+
+def _retain_standby(
+    current_data: ObiEnergyData | None, interval: str
+) -> list[dict[str, Any]]:
+    """Return the previously fetched standby records for an interval."""
+    if current_data is None:
+        return []
+    return getattr(current_data, f"standby_{interval}", None) or []
 
 
 def _measurement_time(record: dict[str, Any]) -> str:
@@ -165,6 +180,11 @@ class ObiEnergyCoordinator(DataUpdateCoordinator[ObiEnergyData]):
 
         try:
             bridges = await self.client.async_get_bridges()
+        except ObiRateLimitError as err:
+            # Throttling is not an auth problem: raising ConfigEntryAuthFailed
+            # here would ask the user to re-enter credentials (and trigger yet
+            # more logins) when the right answer is simply to wait.
+            raise UpdateFailed(str(err)) from err
         except ObiAuthError as err:
             raise ConfigEntryAuthFailed("OBI authentication failed") from err
         except ObiNotFoundError:
@@ -185,6 +205,8 @@ class ObiEnergyCoordinator(DataUpdateCoordinator[ObiEnergyData]):
             historical = await self.client.async_get_historical_data(
                 self.hh_id, self.mid_id, self.historical_duration
             )
+        except ObiRateLimitError as err:
+            raise UpdateFailed(str(err)) from err
         except ObiAuthError as err:
             raise ConfigEntryAuthFailed("OBI authentication failed") from err
         except ObiApiError as err:
@@ -207,20 +229,39 @@ class ObiEnergyCoordinator(DataUpdateCoordinator[ObiEnergyData]):
         # Forecast and standby power are optional supplementary data -- a
         # failure here must not block the poll cycle for the more important
         # energy/sensor_info values above.
+        # While throttled, skip the supplementary endpoints altogether and
+        # keep the previous values: they make up 5 of the 7 requests per cycle
+        # and are worth nothing compared to getting back under the limit.
+        throttled = False
+
         try:
             forecast = await self.client.async_get_consumption_forecast(
                 self.hh_id, self.mid_id
             )
+        except ObiRateLimitError as err:
+            _LOGGER.debug("Skipping forecast, OBI is throttling us: %s", err)
+            throttled = True
+            forecast = {}
         except ObiApiError as err:
             _LOGGER.debug("Could not fetch consumption forecast: %s", err)
             forecast = {}
 
         standby_data: dict[str, list[dict[str, Any]]] = {}
         for interval in STANDBY_INTERVALS:
+            if throttled:
+                standby_data[interval] = _retain_standby(current_data, interval)
+                continue
             try:
                 standby_data[interval] = await self.client.async_get_standby_power(
                     self.hh_id, self.mid_id, interval, STANDBY_DURATION
                 )
+            except ObiRateLimitError as err:
+                _LOGGER.debug(
+                    "Skipping remaining standby fetches, OBI is throttling us: %s",
+                    err,
+                )
+                throttled = True
+                standby_data[interval] = _retain_standby(current_data, interval)
             except ObiApiError as err:
                 _LOGGER.debug(
                     "Could not fetch %s standby power: %s", interval, err
@@ -244,8 +285,12 @@ class ObiEnergyCoordinator(DataUpdateCoordinator[ObiEnergyData]):
             live_upload_interval=current_data.live_upload_interval
             if current_data
             else None,
-            consumption_forecast_weekly=forecast.get("consumptionForecastWeekly"),
-            consumption_forecast_monthly=forecast.get("consumptionForecastMonthly"),
+            consumption_forecast_weekly=forecast.get("consumptionForecastWeekly")
+            if forecast
+            else (current_data.consumption_forecast_weekly if current_data else None),
+            consumption_forecast_monthly=forecast.get("consumptionForecastMonthly")
+            if forecast
+            else (current_data.consumption_forecast_monthly if current_data else None),
             standby_daily=standby_data.get("daily"),
             standby_weekly=standby_data.get("weekly"),
             standby_monthly=standby_data.get("monthly"),

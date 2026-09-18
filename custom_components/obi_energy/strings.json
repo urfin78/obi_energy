@@ -43,7 +43,8 @@
     "error": {
       "invalid_auth": "Login failed. Please check your OBI email and password.",
       "cannot_connect": "Could not connect to the OBI servers. Please try again later.",
-      "invalid_ids": "No data could be found for the entered household/sensor ID."
+      "invalid_ids": "No data could be found for the entered household/sensor ID.",
+      "rate_limited": "OBI is currently rejecting logins (rate limited). Please wait a while and try again."
     },
     "abort": {
       "already_configured": "This bridge/sensor is already configured.",

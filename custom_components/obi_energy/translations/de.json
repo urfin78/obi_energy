@@ -43,7 +43,8 @@
     "error": {
       "invalid_auth": "Anmeldung fehlgeschlagen. Bitte überprüfe E-Mail und Passwort.",
       "cannot_connect": "Verbindung zu den OBI-Servern konnte nicht hergestellt werden. Bitte später erneut versuchen.",
-      "invalid_ids": "Für die eingegebene Haushalts-/Sensor-ID konnten keine Daten gefunden werden."
+      "invalid_ids": "Für die eingegebene Haushalts-/Sensor-ID konnten keine Daten gefunden werden.",
+      "rate_limited": "OBI weist Anmeldungen derzeit ab (Rate-Limit). Bitte etwas warten und erneut versuchen."
     },
     "abort": {
       "already_configured": "Diese Bridge/dieser Sensor ist bereits konfiguriert.",

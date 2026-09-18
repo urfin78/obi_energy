@@ -11,7 +11,13 @@ from homeassistant.const import CONF_EMAIL, CONF_PASSWORD, CONF_SCAN_INTERVAL
 from homeassistant.core import callback
 from homeassistant.helpers.aiohttp_client import async_get_clientsession
 
-from .api import ObiApiClient, ObiAuthError, ObiConnectionError, ObiNotFoundError
+from .api import (
+    ObiApiClient,
+    ObiAuthError,
+    ObiConnectionError,
+    ObiNotFoundError,
+    ObiRateLimitError,
+)
 from .const import (
     CONF_DEBUG,
     CONF_HH_ID,
@@ -92,6 +98,9 @@ class ObiEnergyConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
 
             try:
                 await client.async_login()
+            except ObiRateLimitError as err:
+                _LOGGER.warning("OBI is throttling logins: %s", err)
+                errors["base"] = "rate_limited"
             except ObiAuthError as err:
                 _LOGGER.warning("OBI login rejected during config flow: %s", err)
                 errors["base"] = "invalid_auth"
@@ -212,6 +221,9 @@ class ObiEnergyConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
             )
             try:
                 await client.async_login()
+            except ObiRateLimitError as err:
+                _LOGGER.warning("OBI is throttling reauth logins: %s", err)
+                errors["base"] = "rate_limited"
             except ObiAuthError as err:
                 _LOGGER.warning("OBI reauth login rejected: %s", err)
                 errors["base"] = "invalid_auth"
@@ -258,6 +270,9 @@ class ObiEnergyConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
             )
             try:
                 await client.async_login()
+            except ObiRateLimitError as err:
+                _LOGGER.warning("OBI is throttling reconfigure logins: %s", err)
+                errors["base"] = "rate_limited"
             except ObiAuthError as err:
                 _LOGGER.warning("OBI reconfigure login rejected: %s", err)
                 errors["base"] = "invalid_auth"

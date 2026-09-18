@@ -8,6 +8,7 @@ from __future__ import annotations
 import asyncio
 import base64
 import binascii
+import email.utils
 import json
 import logging
 import re
@@ -44,6 +45,14 @@ _LOGGER = logging.getLogger(__name__)
 
 _REQUEST_TIMEOUT = 30
 _MAX_LOG_BODY_CHARS = 300
+
+# Login backoff. OBI's auth endpoint (www.obi.de/regi/auth) answers a
+# throttled client with a bare 401 (empty body) before it escalates to a
+# real 429, so a failed login must never be retried immediately.
+_LOGIN_BACKOFF_BASE = 60
+_LOGIN_BACKOFF_MAX = 3600
+# Fall back to this when a 429 carries no (parsable) Retry-After header.
+_DEFAULT_RETRY_AFTER = 300
 # Renew a JWT this long before its own "exp" claim runs out.
 _TOKEN_EXPIRY_MARGIN = timedelta(minutes=5)
 # Response headers worth logging. Everything else (notably Set-Cookie) is
@@ -74,6 +83,19 @@ class ObiNotFoundError(ObiApiError):
     """Raised when a resource (e.g. /bridges) returns 404."""
 
 
+class ObiRateLimitError(ObiApiError):
+    """Raised when OBI throttles us (HTTP 429, or a login in cooldown).
+
+    `retry_after` is the number of seconds to stay away, taken from the
+    server's Retry-After header when it sends one.
+    """
+
+    def __init__(self, message: str, retry_after: float | None = None) -> None:
+        """Store the message and the server-requested cooldown."""
+        super().__init__(message)
+        self.retry_after = retry_after
+
+
 _ISO8601_DURATION_RE = re.compile(
     r"^P(?:(?P<days>\d+)D)?"
     r"(?:T(?:(?P<hours>\d+)H)?(?:(?P<minutes>\d+)M)?(?:(?P<seconds>\d+)S)?)?$"
@@ -92,6 +114,36 @@ def _parse_iso8601_duration(duration: str) -> timedelta:
         minutes=parts["minutes"],
         seconds=parts["seconds"],
     )
+
+
+def _parse_retry_after(headers: Any) -> float:
+    """Return the Retry-After delay in seconds, or a safe default.
+
+    RFC 7231 allows either delta-seconds or an HTTP-date; accept both and
+    fall back to a conservative default for a missing or malformed value.
+    """
+    raw = headers.get("Retry-After")
+    if not raw:
+        return _DEFAULT_RETRY_AFTER
+    raw = raw.strip()
+
+    try:
+        return max(0.0, float(int(raw)))
+    except ValueError:
+        pass
+
+    try:
+        parsed = email.utils.parsedate_to_datetime(raw)
+    except (TypeError, ValueError):
+        # parsedate_to_datetime raises on malformed input (Python >= 3.10).
+        _LOGGER.debug("Could not parse Retry-After value %r", raw)
+        return _DEFAULT_RETRY_AFTER
+    if parsed is None:
+        _LOGGER.debug("Could not parse Retry-After value %r", raw)
+        return _DEFAULT_RETRY_AFTER
+    if parsed.tzinfo is None:
+        parsed = parsed.replace(tzinfo=timezone.utc)
+    return max(0.0, (parsed - datetime.now(timezone.utc)).total_seconds())
 
 
 def _jwt_expiry(token: str) -> datetime | None:
@@ -144,9 +196,7 @@ async def _log_http_error(resp: aiohttp.ClientResponse, context: str) -> None:
 
     Only a whitelist of the server's *response* headers is logged. Request
     headers are never logged, and Set-Cookie is deliberately excluded, so no
-    cookie, token or password can end up in logs or issue attachments. The
-    CloudFront headers that are kept (X-Cache, X-Amz-Cf-Id) are what makes an
-    OBI-side failure traceable at all.
+    cookie, token or password can end up in logs or issue attachments.
     """
     body = await _safe_text(resp)
     headers = {
@@ -182,8 +232,10 @@ class ObiApiClient:
         self._token_obtained_at: datetime | None = None
         self._token_expires_at: datetime | None = None
         # Serializes logins so one poll cycle (7 requests) can never trigger
-        # more than a single login.
+        # more than a single login, and holds the throttling backoff state.
         self._login_lock = asyncio.Lock()
+        self._login_blocked_until: datetime | None = None
+        self._login_failures = 0
 
     def update_credentials(self, email: str, password: str) -> None:
         """Update the credentials used for future logins."""
@@ -192,6 +244,9 @@ class ObiApiClient:
         self._token = None
         self._token_obtained_at = None
         self._token_expires_at = None
+        # New credentials deserve a fresh attempt: drop any active cooldown.
+        self._login_blocked_until = None
+        self._login_failures = 0
 
     def update_login_refresh_interval(self, login_refresh_interval: int) -> None:
         """Update how often the token is proactively refreshed."""
@@ -209,15 +264,64 @@ class ObiApiClient:
         now = datetime.now(timezone.utc)
         # The token states its own lifetime; trust that over the configured
         # interval so a long-lived JWT is not replaced (and re-logged-in) every
-        # 55 minutes for no reason. Every password login is a chance for OBI to
-        # reject or invalidate the credentials.
+        # 55 minutes for no reason. Every login is a chance to get throttled.
         if self._token_expires_at is not None:
             return now >= self._token_expires_at - _TOKEN_EXPIRY_MARGIN
 
         return now - self._token_obtained_at >= self._login_refresh_interval
 
+    def _remaining_cooldown(self) -> float:
+        """Return seconds left on the login cooldown (0 if not blocked)."""
+        if self._login_blocked_until is None:
+            return 0.0
+        remaining = (
+            self._login_blocked_until - datetime.now(timezone.utc)
+        ).total_seconds()
+        return max(0.0, remaining)
+
+    def _register_login_failure(self, retry_after: float | None = None) -> None:
+        """Start (or extend) the login cooldown after a rejected login.
+
+        Only auth-style rejections get here - a timeout or a DNS hiccup must
+        not lock the integration out, so those leave the counter alone.
+        """
+        self._login_failures += 1
+        backoff = min(
+            _LOGIN_BACKOFF_BASE * 2 ** (self._login_failures - 1),
+            _LOGIN_BACKOFF_MAX,
+        )
+        # A server-stated Retry-After wins whenever it asks for more patience.
+        delay = max(backoff, retry_after or 0.0)
+        self._login_blocked_until = datetime.now(timezone.utc) + timedelta(
+            seconds=delay
+        )
+        _LOGGER.warning(
+            "OBI login rejected (%s consecutive failure(s)); not retrying for %.0f s",
+            self._login_failures,
+            delay,
+        )
+
     async def async_login(self) -> None:
-        """Log in to OBI and store the resulting JWT in memory only."""
+        """Log in to OBI, honouring the throttling cooldown.
+
+        OBI's auth endpoint answers a throttled client with a bare 401 before
+        it escalates to 429, and the rejection appears to stick to the account
+        rather than only the IP. Retrying such a login immediately makes the
+        lockout worse, so failures put the client into an exponential cooldown
+        and further attempts are refused locally until it lapses.
+        """
+        remaining = self._remaining_cooldown()
+        if remaining > 0:
+            raise ObiRateLimitError(
+                f"OBI login is in cooldown for another {remaining:.0f} s "
+                f"after {self._login_failures} failed attempt(s)",
+                retry_after=remaining,
+            )
+
+        await self._async_login_request()
+
+    async def _async_login_request(self) -> None:
+        """Perform the actual login request and store the resulting JWT."""
         # Serialize the body ourselves - compact, no whitespace - and send it
         # via `data=` (like the previously working YAML REST sensor did),
         # instead of aiohttp's `json=` shortcut, which re-derives its own
@@ -254,8 +358,20 @@ class ObiApiClient:
                 headers=headers,
                 timeout=_REQUEST_TIMEOUT,
             ) as resp:
+                if resp.status == 429:
+                    retry_after = _parse_retry_after(resp.headers)
+                    await _log_http_error(resp, "OBI login")
+                    self._register_login_failure(retry_after)
+                    raise ObiRateLimitError(
+                        "OBI login was rate limited (HTTP 429)",
+                        retry_after=retry_after,
+                    )
                 if resp.status in (401, 403):
                     await _log_http_error(resp, "OBI login")
+                    # Indistinguishable from throttling: OBI returns an empty
+                    # 401 both for a genuinely wrong password and for a client
+                    # it has decided to shut out. Back off either way.
+                    self._register_login_failure()
                     raise ObiAuthError(
                         f"Login failed with HTTP {resp.status}: invalid credentials"
                     )
@@ -303,11 +419,14 @@ class ObiApiClient:
         token = data.get("token") if isinstance(data, dict) else None
         if not token:
             _LOGGER.error("OBI login response did not contain a token")
+            self._register_login_failure()
             raise ObiAuthError("Login response did not contain a token")
 
         self._token = token
         self._token_obtained_at = datetime.now(timezone.utc)
         self._token_expires_at = _jwt_expiry(token)
+        self._login_failures = 0
+        self._login_blocked_until = None
         _LOGGER.debug(
             "OBI login succeeded (token valid until %s)",
             self._token_expires_at.isoformat()
@@ -365,6 +484,13 @@ class ObiApiClient:
                 async with self._session.get(
                     url, headers=headers, params=params, timeout=_REQUEST_TIMEOUT
                 ) as resp:
+                    if resp.status == 429:
+                        retry_after = _parse_retry_after(resp.headers)
+                        await _log_http_error(resp, f"OBI request to {url}")
+                        raise ObiRateLimitError(
+                            f"Request to {url} was rate limited (HTTP 429)",
+                            retry_after=retry_after,
+                        )
                     if resp.status == 401:
                         if attempt == 0:
                             _LOGGER.debug(
@@ -523,6 +649,13 @@ class ObiApiClient:
                     headers=headers,
                     timeout=_REQUEST_TIMEOUT,
                 ) as resp:
+                    if resp.status == 429:
+                        retry_after = _parse_retry_after(resp.headers)
+                        await _log_http_error(resp, f"OBI sensor update to {url}")
+                        raise ObiRateLimitError(
+                            "OBI sensor update was rate limited (HTTP 429)",
+                            retry_after=retry_after,
+                        )
                     if resp.status == 401 and attempt == 0:
                         _LOGGER.debug(
                             "OBI sensor update returned 401, refreshing token and retrying"
@@ -612,6 +745,11 @@ class ObiApiClient:
                     compress=15,
                 )
             except aiohttp.WSServerHandshakeError as err:
+                if err.status == 429:
+                    _LOGGER.error("OBI live WebSocket was rate limited (HTTP 429)")
+                    raise ObiRateLimitError(
+                        "Live WebSocket was rate limited (HTTP 429)"
+                    ) from err
                 if err.status == 401 and attempt == 0:
                     _LOGGER.debug(
                         "OBI live WebSocket returned 401, refreshing token and retrying"
