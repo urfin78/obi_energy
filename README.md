@@ -5,6 +5,14 @@ system. It logs into the OBI backend, discovers your energy-tracking
 bridge/sensor, and exposes native Home Assistant entities — no YAML REST
 sensors required.
 
+> **Fork.** This is a fork of
+> [Karo-X/obi_energy](https://github.com/Karo-X/obi_energy) — all credit for
+> the original integration goes there. This version adds sensors and fixes that
+> are not (yet) merged upstream; some are proposed back as pull requests.
+> Issues with *this* build belong in
+> [this repository's tracker](https://github.com/urfin78/obi_energy/issues),
+> not upstream.
+
 > **Not an official OBI product.** This integration is community-built and
 > is not affiliated with, endorsed by, or supported by OBI or heyOBI. Use at
 > your own risk; the upstream API is undocumented and may change at any
@@ -101,7 +109,7 @@ reporting `0`, so your Energy Dashboard statistics stay accurate.
 This integration is not (yet) in the default HACS store, so it needs to be
 added as a **custom repository**:
 
-**HACS → Custom repositories → URL `https://github.com/Karo-X/obi_energy` →
+**HACS → Custom repositories → URL `https://github.com/urfin78/obi_energy` →
 Category `Integration` → Install → Restart Home Assistant → Settings →
 Devices & Services → Add Integration → OBI Energy.**
 
@@ -110,7 +118,7 @@ Spelled out:
 1. Open **HACS → Integrations** in Home Assistant.
 2. Click the **⋮** (three-dot) menu in the top right corner and choose
    **Custom repositories**.
-3. Add this repository's URL (`https://github.com/Karo-X/obi_energy`) and
+3. Add this repository's URL (`https://github.com/urfin78/obi_energy`) and
    select category **Integration**, then **Add**.
 4. Find **OBI Energy** in HACS and click **Install**.
 5. Restart Home Assistant.
