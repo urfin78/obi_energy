@@ -46,6 +46,16 @@ _REQUEST_TIMEOUT = 30
 _MAX_LOG_BODY_CHARS = 300
 # Renew a JWT this long before its own "exp" claim runs out.
 _TOKEN_EXPIRY_MARGIN = timedelta(minutes=5)
+# Response headers worth logging. Everything else (notably Set-Cookie) is
+# dropped so no session material can end up in logs or issue attachments.
+_LOGGED_HEADERS = (
+    "Retry-After",
+    "Date",
+    "X-Cache",
+    "X-Amz-Cf-Id",
+    "Content-Length",
+    "Content-Type",
+)
 
 
 class ObiApiError(Exception):
@@ -130,17 +140,25 @@ async def _safe_text(resp: aiohttp.ClientResponse) -> str:
 
 
 async def _log_http_error(resp: aiohttp.ClientResponse, context: str) -> None:
-    """Log HTTP status, response headers and a truncated body.
+    """Log HTTP status, selected response headers and a truncated body.
 
-    Only the server's *response* headers are logged (never the request
-    headers we sent), so no cookie, token or password ever ends up here.
+    Only a whitelist of the server's *response* headers is logged. Request
+    headers are never logged, and Set-Cookie is deliberately excluded, so no
+    cookie, token or password can end up in logs or issue attachments. The
+    CloudFront headers that are kept (X-Cache, X-Amz-Cf-Id) are what makes an
+    OBI-side failure traceable at all.
     """
     body = await _safe_text(resp)
+    headers = {
+        name: value
+        for name, value in resp.headers.items()
+        if name.title() in _LOGGED_HEADERS
+    }
     _LOGGER.error(
         "%s failed with HTTP %s. Response headers: %s. Response body: %s",
         context,
         resp.status,
-        dict(resp.headers),
+        headers,
         _truncate(body),
     )
 
