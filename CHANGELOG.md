@@ -1,5 +1,25 @@
 # Changelog
 
+## v0.4.0-beta.6
+
+**Beta pre-release.** Metadata only — no functional change.
+
+### Changed
+
+- `manifest.json` still pointed at the upstream repository for documentation
+  and issue reporting, so Home Assistant directed users to file bugs about
+  *this* build at `Karo-X/obi_energy` — including the `state_class` warning
+  fixed in beta.5, which came from a commit that only exists in this fork.
+  `codeowners`, `documentation` and `issue_tracker` now point here, because
+  all three describe the code that actually runs.
+- The README gains a fork notice crediting the original integration and
+  stating where issues with this build belong, and the installation
+  instructions now name this repository's URL instead of upstream's.
+
+Attribution is unchanged: the MIT license file keeps its original
+`Copyright (c) 2026 Karo-X` notice — which is what the license requires — and
+the README credits the original prominently.
+
 ## v0.4.0-beta.5
 
 **Beta pre-release.**
